@@ -1,0 +1,26 @@
+# Secrets — keep out of Claude's context
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*-secret.yaml
+secrets.yaml
+*.dec.yaml
+kubeconfig*
+.kube/
+
+# Vendored / generated — noise, not source of truth
+node_modules/
+.venv/
+__pycache__/
+.terraform/
+*.tfstate
+*.tfstate.*
+charts/**/charts/
+*.tgz
+
+# Build output
+.next/
+out/
+*.tsbuildinfo

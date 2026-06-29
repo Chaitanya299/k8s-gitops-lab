@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-backend
+  namespace: platform
+---
+# Read-only across the cluster: pods + logs for the status/logs APIs.
+# The backend has NO write access to the API server — deploys go through git.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-backend-read
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-backend-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-backend-read
+subjects:
+  - kind: ServiceAccount
+    name: platform-backend
+    namespace: platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-backend-config
+  namespace: platform
+data:
+  AI_NAMESPACE: ai-services
+  GITOPS_BRANCH: main
+  GITOPS_VALUES_TEMPLATE: gitops/environments/dev/{service}.yaml
+  PROMETHEUS_URL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  GIT_AUTHOR_NAME: platform-bot
+  GIT_AUTHOR_EMAIL: platform-bot@local
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-backend
+  namespace: platform
+  labels:
+    app: platform-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-backend
+  template:
+    metadata:
+      labels:
+        app: platform-backend
+    spec:
+      serviceAccountName: platform-backend
+      containers:
+        - name: backend
+          image: localhost:5001/platform-backend:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: platform-backend-config
+            - secretRef:
+                name: platform-backend-secrets
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-backend
+  namespace: platform
+spec:
+  selector:
+    app: platform-backend
+  ports:
+    - port: 80
+      targetPort: 8080

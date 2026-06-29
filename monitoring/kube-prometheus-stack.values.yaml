@@ -1,0 +1,47 @@
+# Helm values for kube-prometheus-stack (Prometheus + Grafana + Alertmanager).
+# Trimmed for a local kind cluster.
+
+# Pick up ServiceMonitors regardless of the helm-release label, so the
+# ai-service chart's ServiceMonitor is scraped without extra wiring.
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 6h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+
+# Alertmanager not used in v1 (Slack alerts deferred) — keep it off to save resources.
+alertmanager:
+  enabled: false
+
+grafana:
+  adminPassword: admin
+  defaultDashboardsEnabled: true
+  # Anonymous viewer + iframe embedding so the dashboard page can embed panels.
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+    security:
+      allow_embedding: true
+      cookie_samesite: none
+    users:
+      default_theme: dark
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.127.0.0.1.nip.io
+  # Sidecar imports any ConfigMap labeled grafana_dashboard=1 (our dashboard).
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+# kind nodes: relax kubelet scraping so node/cadvisor metrics work out of the box.
+kubelet:
+  serviceMonitor:
+    https: true

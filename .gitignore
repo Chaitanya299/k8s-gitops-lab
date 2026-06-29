@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Local / secrets
+.env
+.env.*
+*.local
+kubeconfig*
+*.kubeconfig
+.kube/
+
+# Secrets — never commit plaintext (use Sealed Secrets / SOPS)
+*.key
+*.pem
+*.crt
+*-secret.yaml
+secrets.yaml
+*.dec.yaml
+
+# Helm
+charts/**/charts/
+*.tgz
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

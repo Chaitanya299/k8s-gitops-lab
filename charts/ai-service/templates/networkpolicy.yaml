@@ -1,0 +1,22 @@
+{{- if .Values.networkPolicy.enabled }}
+# ponytail: emitted because the spec requires a NetworkPolicy per service. kind's
+# default CNI (kindnet) does NOT enforce NetworkPolicy — install Calico to make
+# this teeth-bearing. Kept faithful so the manifest is right when enforcement exists.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ai-service.fullname" . }}
+  labels:
+    {{- include "ai-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ai-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow ingress-controller and in-namespace traffic to the http port.
+    - ports:
+        - port: http
+          protocol: TCP
+{{- end }}

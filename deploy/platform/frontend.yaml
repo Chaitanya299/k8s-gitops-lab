@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-frontend
+  namespace: platform
+  labels:
+    app: platform-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-frontend
+  template:
+    metadata:
+      labels:
+        app: platform-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: localhost:5001/platform-frontend:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            # Same-origin: browser calls /api/* on the dashboard host, ingress
+            # routes it to the backend. Grafana is iframed from its own host.
+            - name: NEXT_PUBLIC_GRAFANA_URL
+              value: http://grafana.127.0.0.1.nip.io
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-frontend
+  namespace: platform
+spec:
+  selector:
+    app: platform-frontend
+  ports:
+    - port: 80
+      targetPort: 3000
