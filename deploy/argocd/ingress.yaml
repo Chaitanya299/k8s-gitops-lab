@@ -1,0 +1,20 @@
+# ArgoCD UI ingress. Pairs with server.insecure=true (set in bootstrap) so nginx
+# can talk plain HTTP to argocd-server.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: argocd.127.0.0.1.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
