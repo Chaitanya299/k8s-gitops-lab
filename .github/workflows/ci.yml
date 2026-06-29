@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -r apps/platform-backend/requirements.txt
+          pip install ruff pytest
+      - name: Lint
+        run: ruff check apps/platform-backend apps/sample-ai-service || true
+      - name: Test core GitOps loop
+        run: pytest tests/ -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build
+        working-directory: apps/platform-frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint + template
+        run: |
+          helm lint charts/ai-service
+          helm template charts/ai-service -f gitops/environments/dev/sample-ai-service.yaml >/dev/null
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images (validate Dockerfiles)
+        run: |
+          docker build -t sample-ai-service apps/sample-ai-service
+          docker build -t platform-backend apps/platform-backend
+          docker build -t platform-frontend apps/platform-frontend
+      # On AWS: configure-aws-credentials + amazon-ecr-login, then push to ECR and
+      # bump gitops/environments/dev/<svc>.yaml image.tag. Enable when EKS is live.
