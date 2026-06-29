@@ -60,8 +60,10 @@ kc create namespace argocd --dry-run=client -o yaml | kc apply -f -
 # Server-side apply: ArgoCD's CRDs exceed the 256KB client-side apply annotation.
 kc apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 kc -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}'
+# Poll git every 30s so a Deploy click syncs quickly (ArgoCD default is 3m).
+kc -n argocd patch configmap argocd-cm --type merge -p '{"data":{"timeout.reconciliation":"30s"}}'
 kc -n argocd rollout status deploy/argocd-server --timeout=300s
-kc -n argocd rollout restart deploy/argocd-server
+kc -n argocd rollout restart deploy/argocd-server statefulset/argocd-application-controller
 kc apply -f "$ROOT/deploy/argocd/ingress.yaml"
 
 # ── 5. Gitea (GitOps source of truth) ───────────────────────────────────────
