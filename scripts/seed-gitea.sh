@@ -15,9 +15,10 @@ for _ in $(seq 1 60); do
 done
 
 echo "→ admin user"
-kc -n gitea exec deploy/gitea -- gitea admin user create \
+# Standard gitea image runs as root; drop to the git user (it refuses to run as root).
+kc -n gitea exec deploy/gitea -- su-exec git gitea admin user create \
   --username "$GITEA_USER" --password "$GITEA_PASSWORD" \
-  --email "platform@local" --admin --must-change-password=false 2>/dev/null || true
+  --email "platform@local" --admin --must-change-password=false 2>&1 || true
 
 echo "→ gitops repo"
 curl -fsS -u "${GITEA_USER}:${GITEA_PASSWORD}" -H 'Content-Type: application/json' \
@@ -27,12 +28,14 @@ curl -fsS -u "${GITEA_USER}:${GITEA_PASSWORD}" -H 'Content-Type: application/jso
 echo "→ push project"
 cd "$ROOT"
 [ -d .git ] || git init -q -b main
+# Clear any stale locks (e.g. from an interrupted run or an IDE git integration).
+rm -f .git/config.lock .git/index.lock 2>/dev/null || true
 git config user.email "platform-bot@local"
 git config user.name "platform-bot"
 git add -A
 git commit -qm "platform bootstrap" 2>/dev/null || true
 git branch -M main
-git remote remove gitea 2>/dev/null || true
-git remote add gitea "http://${GITEA_USER}:${GITEA_PASSWORD}@${GITEA_HOST}/${GITEA_USER}/gitops.git"
+GITEA_REMOTE="http://${GITEA_USER}:${GITEA_PASSWORD}@${GITEA_HOST}/${GITEA_USER}/gitops.git"
+git remote set-url gitea "$GITEA_REMOTE" 2>/dev/null || git remote add gitea "$GITEA_REMOTE"
 git push -f -q gitea main
 echo "✓ seeded http://${GITEA_HOST}/${GITEA_USER}/gitops"
