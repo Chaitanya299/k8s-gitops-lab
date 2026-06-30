@@ -91,6 +91,194 @@ shows the git commit log.
 
 ---
 
+## Onboarding a new AI service
+
+The platform can deploy any containerised service — not just `sample-ai-service`.
+Here is the contract your service must satisfy and the three files you must add.
+
+### HTTP contract (required)
+
+The Helm chart's liveness and readiness probes, Prometheus scraping, and the
+dashboard's service view all depend on these endpoints being present:
+
+| Endpoint | Method | Must return |
+|----------|--------|-------------|
+| `/health` | `GET` | `{"status": "ok"}` — liveness probe |
+| `/ready` | `GET` | `{"status": "ready"}` — readiness probe (block until the service is warm) |
+| `/metrics` | `GET` | Prometheus text format (`text/plain; version=0.0.4`) |
+
+Your service must listen on **port 8000** (the Helm chart's `targetPort`).
+
+If your service is not an HTTP server (e.g. a LiveKit worker, a background
+consumer, or a CLI process), wrap it with a small FastAPI health sidecar running
+in a background thread so the probes are satisfied while your main process runs.
+
+```python
+# minimal sidecar — add to any non-HTTP process
+import threading, uvicorn
+from fastapi import FastAPI
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+
+_health_app = FastAPI()
+
+@_health_app.get("/health")
+def health(): return {"status": "ok"}
+
+@_health_app.get("/ready")
+def ready(): return {"status": "ready"}
+
+@_health_app.get("/metrics")
+def metrics(): return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+threading.Thread(
+    target=uvicorn.run, args=(_health_app,),
+    kwargs={"host": "0.0.0.0", "port": 8000}, daemon=True
+).start()
+```
+
+### Docker image
+
+Build and push to the in-cluster registry before deploying:
+
+```bash
+docker build -t localhost:5001/<your-service>:<tag> apps/<your-service>/
+docker push localhost:5001/<your-service>:<tag>
+```
+
+The registry runs at `localhost:5001` (started by `make up`). The image name
+becomes the `image.repository` value in your values file.
+
+> **Note:** If your service needs system packages (e.g. `ffmpeg` for audio,
+> `libsndfile` for audio I/O), install them in your Dockerfile — the base Python
+> slim images do not include them.
+
+### File 1 — GitOps values (`gitops/environments/dev/<your-service>.yaml`)
+
+Copy `gitops/environments/dev/sample-ai-service.yaml` and update the fields.
+This file is the ArgoCD source of truth; the platform backend rewrites it on
+every deploy.
+
+```yaml
+# MANAGED BY THE PLATFORM BACKEND.
+replicaCount: 1
+
+image:
+  repository: localhost:5001/<your-service>
+  tag: "0.1.0"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+# Non-sensitive config → ConfigMap (readable in pod env)
+env:
+  SERVICE_NAME: <your-service>
+  MODEL: <model-id-or-echo>
+
+# Sensitive config → Secret (e.g. API keys)
+secretEnv:
+  MY_API_KEY: ""        # fill via dashboard or kubectl secret patch
+
+ingress:
+  enabled: true
+  host: <your-service>.127.0.0.1.nip.io
+```
+
+### File 2 — ArgoCD Application (`gitops/argocd/applications/<your-service>.yaml`)
+
+Copy `gitops/argocd/applications/sample-ai-service.yaml` and replace the
+service name. ArgoCD's app-of-apps picks this up automatically.
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: <your-service>
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/platform/gitops.git
+    targetRevision: main
+    path: charts/ai-service
+    helm:
+      valueFiles:
+        - ../../../gitops/environments/dev/<your-service>.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-services
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+```
+
+### File 3 — Dockerfile
+
+The shared `charts/ai-service` Helm chart is image-agnostic — it only cares
+about the HTTP contract above. Bring your own Dockerfile. Pattern from the
+sample service:
+
+```dockerfile
+FROM python:3.12-slim AS builder
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.12-slim AS runtime
+# Install system deps your service needs (e.g. ffmpeg for audio):
+# RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+RUN useradd --create-home --uid 10001 appuser
+COPY --from=builder /install /usr/local
+WORKDIR /app
+COPY app ./app
+USER appuser
+EXPOSE 8000
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### What the platform handles for you
+
+Once the three files above are committed and your image is pushed, the platform
+takes care of:
+
+- GitOps deploy loop — dashboard `POST /api/deploy` mutates the values file and commits
+- ArgoCD reconciliation every 30 s — no `kubectl apply` needed
+- HPA scaling (min/max replicas from the values file)
+- Ingress routing via nginx at `<your-service>.127.0.0.1.nip.io`
+- Prometheus scraping via `ServiceMonitor`
+- Secret injection from `secretEnv` via a Kubernetes `Secret`
+- ConfigMap injection from `env`
+- Pod status, logs, and metrics visible in the dashboard
+
+### Services that need external dependencies
+
+Some AI services (voice agents, speech pipelines) depend on external cloud
+services rather than a local model. These work fine — the platform treats them
+as regular deployments. Supply credentials via `secretEnv`; the service dials
+out through normal cluster egress. The platform does **not** provide:
+
+- A LiveKit server (use LiveKit Cloud or self-host separately)
+- STT/TTS cloud services (DeepGram, ElevenLabs, etc.)
+- LLM APIs (Mistral, OpenAI, Anthropic, etc.)
+- GPU nodes (v1 is CPU-only; add a node pool for GPU workloads in v2)
+
+---
+
 ## Development
 
 ### Install backend dependencies
