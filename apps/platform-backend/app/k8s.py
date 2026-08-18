@@ -88,3 +88,41 @@ def get_logs(pod: str, namespace: str | None = None, tail: int = 200) -> str:
         return core.read_namespaced_pod_log(pod, ns, tail_lines=tail)
     except ApiException as e:
         return f"error reading logs: {e.reason}"
+
+
+def get_argocd_status(service: str | None = None) -> list[dict]:
+    """ArgoCD Application sync/health — read-only, for 'did my deploy land yet?'.
+
+    ArgoCD owns reconciliation; the backend only observes it. The RBAC for this
+    grants get/list/watch on applications and nothing else.
+    """
+    _ensure_config()
+    api = client.CustomObjectsApi()
+    kwargs = {"group": "argoproj.io", "version": "v1alpha1", "namespace": "argocd",
+              "plural": "applications"}
+    try:
+        if service:
+            items = [api.get_namespaced_custom_object(name=service, **kwargs)]
+        else:
+            items = api.list_namespaced_custom_object(**kwargs).get("items", [])
+    except ApiException as e:
+        return [{"error": f"cannot read ArgoCD applications: {e.reason}"}]
+
+    out = []
+    for app in items:
+        status = app.get("status", {}) or {}
+        sync = status.get("sync", {}) or {}
+        health = status.get("health", {}) or {}
+        operation = (status.get("operationState", {}) or {})
+        out.append(
+            {
+                "name": (app.get("metadata", {}) or {}).get("name"),
+                "sync_status": sync.get("status"),
+                "health_status": health.get("status"),
+                "revision": (sync.get("revision") or "")[:8],
+                "last_operation": operation.get("phase"),
+                "last_operation_message": operation.get("message"),
+                "finished_at": operation.get("finishedAt"),
+            }
+        )
+    return out

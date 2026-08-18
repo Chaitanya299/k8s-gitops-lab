@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## What this is
 
@@ -70,10 +70,6 @@ cd apps/platform-backend && pip install -r requirements.txt && uvicorn app.main:
 | `apps/platform-backend/app/k8s.py` | **Read-only** cluster views (status/logs); in-cluster config, falls back to local kubeconfig |
 | `apps/platform-backend/app/metrics.py` | Thin proxy over the Prometheus HTTP API; PromQL lives here |
 | `apps/platform-backend/app/auth.py` | **Stub seam** — v1 has no auth; `require_user()` returns a fake admin. Every protected route already `Depends` on it, so turning auth on is a one-file change |
-| `apps/platform-backend/app/chat/` | The deploy assistant: `agent.py` (manual tool-use loop + constant system prompt — the prompt is a module constant so prompt caching works), `tools.py` (8 read-only tools + `propose_deployment`; every tool result is redacted and `<untrusted_data>`-wrapped), `router.py` (SSE `/api/chat`). No tool writes to git/cluster |
-| `apps/platform-backend/app/llm/` | Pluggable providers behind `LLMProvider`; `get_provider()` raises `LLMNotConfigured` when `LLM_PROVIDER` is unset (chat routes 503). Claude via the `anthropic` SDK, Ollama for local |
-| `apps/platform-backend/app/store/` | SQLite (WAL, numbered migrations): `knowledge.py` (BM25/FTS5 retrieval behind a `Retriever` seam) + `conversations.py`. Backed by the `platform-knowledge` PVC |
-| `apps/platform-backend/app/redact.py` | Secret redaction applied at the boundary — every tool result, before prompt or storage. Pure; tested exhaustively |
 | `apps/sample-ai-service/` | The workload the platform deploys. Echoes by default; proxies a real model only if `OLLAMA_URL` is set |
 | `charts/ai-service/` | The Helm chart `apply_settings` mutates via its values file |
 | `gitops/environments/dev/<service>.yaml` | Per-service Helm values = the GitOps source of truth that gets committed |
@@ -96,6 +92,6 @@ cd apps/platform-backend && pip install -r requirements.txt && uvicorn app.main:
 
 ## Helper docs
 
-`.claude/QUICK_START.md`, `.claude/ARCHITECTURE_MAP.md`, and
-`.claude/COMMON_MISTAKES.md` hold quick references (file locations, commands,
+`.Codex/QUICK_START.md`, `.Codex/ARCHITECTURE_MAP.md`, and
+`.Codex/COMMON_MISTAKES.md` hold quick references (file locations, commands,
 pitfalls). Read `COMMON_MISTAKES.md` first if something behaves unexpectedly.

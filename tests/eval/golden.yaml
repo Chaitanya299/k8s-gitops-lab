@@ -1,0 +1,106 @@
+# Golden set for the retrieval eval. Each entry seeds a chunk and asks a
+# question whose answer lives in that chunk. recall@5 measures how often the
+# right chunk lands in the top 5; MRR measures how high.
+#
+# This is the evidence behind the "BM25 is good enough" decision. When it drops
+# below threshold, that is the signal to add a hybrid retriever — not a hunch.
+
+threshold_recall_at_5: 0.85
+
+corpus:
+  - id: oom-256
+    source: learned_issue
+    title: "sample-ai-service OOMKilled at 256Mi"
+    content: >
+      Problem: the pod entered a CrashLoopBackOff and events showed OOMKilled.
+      Resolution: the memory request and limit were both 256Mi; raising the
+      memory limit to 512Mi stopped the restarts.
+  - id: scale-replicas
+    source: learned_issue
+    title: "Requested replicas not all running"
+    content: >
+      Problem: setting replicas in the dashboard did not increase the number of
+      running pods. Resolution: autoscaling was enabled, so the dashboard
+      replicas value maps to autoscaling.minReplicas; the HPA was overriding it.
+  - id: argocd-slow
+    source: docs
+    title: "How fast does a deploy land"
+    content: >
+      ArgoCD polls the Gitea repository every 30 seconds, so a commit typically
+      reconciles into the cluster within about a minute of the Deploy click.
+  - id: nip-hostnames
+    source: docs
+    title: "Dashboard and service hostnames"
+    content: >
+      Services are reachable via nip.io hostnames such as
+      sample-ai-service.127.0.0.1.nip.io, so no /etc/hosts edits are needed.
+  - id: image-registry
+    source: docs
+    title: "Local image registry"
+    content: >
+      Images are built and pushed to the local registry at localhost:5001 and
+      referenced from the Helm values as localhost:5001/sample-ai-service.
+  - id: gitops-invariant
+    source: docs
+    title: "Deploys go through git, never kubectl"
+    content: >
+      A deploy mutates the service's Helm values file in Gitea, commits, and
+      pushes. ArgoCD reconciles the cluster from that commit. The backend has
+      read-only Kubernetes access and cannot write to the cluster directly.
+  - id: prometheus-metrics
+    source: docs
+    title: "What metrics are available"
+    content: >
+      Prometheus scrapes the sample service's /metrics endpoint for request
+      rate, p95 latency, error rate, and in-flight request count. Grafana charts
+      these on the AI platform dashboard.
+  - id: echo-vs-model
+    source: docs
+    title: "Sample service model behaviour"
+    content: >
+      The sample AI service echoes the prompt back by default. It only proxies a
+      real model when the OLLAMA_URL environment variable is set on the service.
+  - id: deploy-history
+    source: docs
+    title: "Where deployment history comes from"
+    content: >
+      Deployment history is the git log of the gitops repository. Each Deploy is
+      a commit, so there is no separate database recording who deployed what.
+  - id: namespace
+    source: docs
+    title: "Which namespace services run in"
+    content: >
+      Deployed AI services run in the ai-services namespace. The platform's own
+      frontend and backend run in the platform namespace.
+
+questions:
+  - q: "my pod keeps crashing with OOMKilled, what should I do about memory?"
+    expect: oom-256
+  - q: "I set replicas to 5 but they aren't all running"
+    expect: scale-replicas
+  - q: "how long until my deployment actually shows up in the cluster?"
+    expect: argocd-slow
+  - q: "what url do I use to reach a deployed service?"
+    expect: nip-hostnames
+  - q: "where do container images come from?"
+    expect: image-registry
+  - q: "can the backend run kubectl apply against the cluster?"
+    expect: gitops-invariant
+  - q: "what performance metrics can I see?"
+    expect: prometheus-metrics
+  - q: "does the sample service run a real language model?"
+    expect: echo-vs-model
+  - q: "how is deployment history stored, is there a database?"
+    expect: deploy-history
+  - q: "which namespace do the AI services live in?"
+    expect: namespace
+  - q: "pod OOMKilled crashloop memory limit too low"
+    expect: oom-256
+  - q: "deploy is a git commit reconciled by argocd not kubectl"
+    expect: gitops-invariant
+  - q: "reconciliation polling interval 30 seconds"
+    expect: argocd-slow
+  - q: "minReplicas autoscaling HPA overriding replica count"
+    expect: scale-replicas
+  - q: "grafana request rate latency error rate inflight"
+    expect: prometheus-metrics

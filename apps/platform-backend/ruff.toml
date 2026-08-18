@@ -1,0 +1,5 @@
+# FastAPI's Depends()/Query() defaults are the framework's intended idiom, so
+# B008 (function call in argument default) is a false positive here.
+[lint]
+extend-select = ["B", "C4", "I"]
+ignore = ["B008"]

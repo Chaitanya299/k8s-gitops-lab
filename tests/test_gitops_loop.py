@@ -13,7 +13,7 @@ from ruamel.yaml import YAML
 BACKEND = Path(__file__).resolve().parent.parent / "apps" / "platform-backend"
 sys.path.insert(0, str(BACKEND))
 
-from app.gitops import DeploySpec, GitOps, apply_settings  # noqa: E402
+from app.gitops import DeploySpec, GitOps, apply_settings
 
 yaml = YAML()
 

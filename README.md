@@ -428,11 +428,63 @@ the cluster. Override via env vars for local development:
 
 ---
 
+## Deploy assistant (chat)
+
+A conversational assistant sits alongside the dashboard (the ✦ button, bottom
+right). It answers from **real platform state** — running services, pod logs,
+current metrics, deployment history, ArgoCD sync status, and a growing store of
+issues the platform has seen before — reached through read-only tools, not a
+prompt full of stale context. It can **propose** deploy settings with its
+reasoning; you click Deploy and the existing `POST /api/deploy` does the work.
+
+**The GitOps invariant holds.** The assistant has no tool that writes to git or
+the cluster. Its strongest action is proposing a deployment, which is
+re-validated server-side and confirmed by a human before any commit.
+
+Configure it at bootstrap — it is **off by default** (the platform is fully
+functional without it):
+
+```bash
+LLM_PROVIDER=claude ANTHROPIC_API_KEY=sk-ant-... ./scripts/bootstrap.sh   # hosted (Anthropic)
+LLM_PROVIDER=gemini GEMINI_API_KEY=AIza...       ./scripts/bootstrap.sh   # hosted (Google)
+LLM_PROVIDER=ollama ./scripts/bootstrap.sh                                # fully local, no data egress
+```
+
+- **`claude`** uses the Anthropic API (`CLAUDE_MODEL`, default `claude-opus-5`).
+- **`gemini`** uses the Google Gemini API (`GEMINI_MODEL`, default
+  `gemini-2.5-flash`).
+- Both hosted options send cluster state (service names, pod logs **after secret
+  redaction**) to the provider — a real data-egress decision. The key lives only
+  in the `platform-backend-secrets` secret, created imperatively by
+  `bootstrap.sh`, never committed.
+- **`ollama`** runs a local model in-cluster; nothing leaves the cluster. Costs
+  a one-time model pull at bootstrap.
+
+The provider is a one-file seam (`app/llm/`): each backend translates the same
+canonical message/tool format to its own wire format, so adding another is a new
+adapter plus a factory branch.
+
+Safety controls: pod logs and git history are wrapped in `<untrusted_data>` tags
+so the model treats them as data; secrets are redacted at the boundary
+(`app/redact.py`); deploy proposals are re-validated through the same Pydantic
+model the deploy endpoint enforces; and a per-conversation token budget plus a
+per-IP rate limit bound abuse. Metrics for the subsystem (tokens, cache-hit
+ratio, tool calls, latency) land on the Grafana dashboard.
+
+Retrieval is BM25 over SQLite FTS5, with a golden-set eval
+(`tests/eval/rag_eval.py`) reporting recall@5 — the seam for a vector/hybrid
+retriever is `app/store/knowledge.py:Retriever` if the number drops.
+
+---
+
 ## Deferred (v2+)
 
-- JWT auth + Admin/Developer/Viewer RBAC (seam is `app/auth.py`)
+- JWT auth + Admin/Developer/Viewer RBAC (seam is `app/auth.py`) — also gates the
+  chat surface, which reads logs across the namespace
 - Multi-namespace deployments (one ArgoCD Application per namespace)
 - Loki log aggregation
 - AlertManager + Slack alerts
 - Real AWS EKS apply (`infra/terraform/` is ready, not wired)
-- Postgres/Redis for platform state
+- Postgres/Redis for platform state, and **Postgres + pgvector** as the
+  knowledge-store upgrade path when BM25 recall or multi-replica writes demand it
+- Per-user conversation scoping (arrives with the auth seam)

@@ -7,6 +7,12 @@ metadata:
   namespace: platform
   annotations:
     nginx.ingress.kubernetes.io/use-regex: "true"
+    # SSE for the chat stream: without buffering off, nginx holds the whole
+    # response and the "streaming" turn arrives in one lump. The long read
+    # timeout keeps a slow multi-tool turn from being cut mid-stream.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
 spec:
   ingressClassName: nginx
   rules:
