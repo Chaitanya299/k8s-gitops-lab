@@ -96,9 +96,33 @@ step "Seed Gitea"
 # ── 9. Deploy the platform (frontend + backend) ─────────────────────────────
 step "Platform"
 kc create namespace platform --dry-run=client -o yaml | kc apply -f -
+
+# Chat assistant config. LLM_PROVIDER/ANTHROPIC_API_KEY come from the caller's
+# environment and land only in the secret — never committed, same as the git
+# credentials. Unset is fine: chat 503s with setup instructions until configured.
+LLM_PROVIDER="${LLM_PROVIDER:-}"
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 kc -n platform create secret generic platform-backend-secrets \
   --from-literal=GITOPS_REPO_URL="http://${GITEA_USER}:${GITEA_PASSWORD}@gitea-http.gitea.svc.cluster.local:3000/platform/gitops.git" \
+  --from-literal=LLM_PROVIDER="${LLM_PROVIDER}" \
+  --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+  --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY}" \
+  --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
   --dry-run=client -o yaml | kc apply -f -
+
+# Ollama only when it's the chosen provider — no 4GB model pull otherwise.
+if [ "$LLM_PROVIDER" = "ollama" ]; then
+  step "Ollama (local LLM)"
+  kc apply -f "$ROOT/deploy/ollama/ollama.yaml"
+  # Patch the init container's model to the requested one, then wait for the pull.
+  kc -n platform set env deployment/ollama --containers='*' \
+    OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.1}" 2>/dev/null || true
+  kc -n platform rollout status deploy/ollama --timeout=600s || \
+    echo "  (ollama still pulling the model; the backend will retry)"
+fi
+
 kc apply -k "$ROOT/deploy/platform"
 kc -n platform rollout status deploy/platform-backend --timeout=180s
 kc -n platform rollout status deploy/platform-frontend --timeout=180s
@@ -119,3 +143,16 @@ cat <<EOF
 
 Open the dashboard, pick sample-ai-service, set replicas, and Deploy.
 EOF
+
+if [ -z "${LLM_PROVIDER:-}" ]; then
+  cat <<'EOF'
+
+  The deploy assistant is not configured (the ✦ button will show setup steps).
+  To enable it, re-run with a provider:
+
+    LLM_PROVIDER=claude ANTHROPIC_API_KEY=sk-ant-... ./scripts/bootstrap.sh   # hosted (Anthropic)
+    LLM_PROVIDER=gemini GEMINI_API_KEY=AIza...      ./scripts/bootstrap.sh   # hosted (Google)
+    LLM_PROVIDER=openai OPENAI_API_KEY=sk-...        ./scripts/bootstrap.sh   # hosted (OpenAI)
+    LLM_PROVIDER=ollama ./scripts/bootstrap.sh                                # fully local, no data egress
+EOF
+fi

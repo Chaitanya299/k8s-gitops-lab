@@ -34,4 +34,9 @@ body {
   .pill {
     @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
   }
+  .chat-panel {
+    @apply fixed right-0 top-0 z-40 flex h-full w-[26rem] max-w-[100vw] flex-col
+      border-l border-slate-800 bg-slate-950/95 backdrop-blur-sm
+      transition-transform duration-300;
+  }
 }

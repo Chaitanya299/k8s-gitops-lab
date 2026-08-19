@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 
-const SERVICES = ["sample-ai-service"];
 const MODELS = ["echo", "gemma", "qwen", "mistral"];
 
 type DeployResult = {
@@ -14,8 +13,16 @@ type DeployResult = {
 };
 
 export default function DeployPage() {
+  const [knownServices, setKnownServices] = useState<string[]>([]);
+
+  useEffect(() => {
+    api<{ name: string }[]>("/services")
+      .then((list) => setKnownServices(list.map((s) => s.name)))
+      .catch(() => {});
+  }, []);
+
   const [form, setForm] = useState({
-    service: SERVICES[0],
+    service: "sample-ai-service",
     replicas: 3,
     cpu: "200m",
     memory: "256Mi",
@@ -56,15 +63,18 @@ export default function DeployPage() {
       <form onSubmit={submit} className="card mt-6 grid grid-cols-2 gap-5">
         <div className="col-span-2">
           <label className="label">Service</label>
-          <select
+          <input
             className="input"
+            list="known-services"
             value={form.service}
             onChange={(e) => set("service", e.target.value)}
-          >
-            {SERVICES.map((s) => (
-              <option key={s}>{s}</option>
+            placeholder="service-name (pick existing or type new)"
+          />
+          <datalist id="known-services">
+            {knownServices.map((s) => (
+              <option key={s} value={s} />
             ))}
-          </select>
+          </datalist>
         </div>
 
         <div>

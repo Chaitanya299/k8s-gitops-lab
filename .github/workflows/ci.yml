@@ -16,11 +16,16 @@ jobs:
       - name: Install
         run: |
           pip install -r apps/platform-backend/requirements.txt
-          pip install ruff pytest
-      - name: Lint
+          pip install ruff pytest pytest-asyncio pyyaml
+      - name: Lint (advisory, whole tree)
         run: ruff check apps/platform-backend apps/sample-ai-service || true
-      - name: Test core GitOps loop
+      - name: Lint gate (new chat + store + llm modules)
+        working-directory: apps/platform-backend
+        run: ruff check app/chat app/llm app/store app/redact.py app/observability.py app/schemas.py
+      - name: Test core GitOps loop + chat subsystem
         run: pytest tests/ -q
+      - name: RAG retrieval eval (advisory)
+        run: python tests/eval/rag_eval.py || echo "recall below threshold — consider a hybrid retriever"
 
   frontend:
     runs-on: ubuntu-latest

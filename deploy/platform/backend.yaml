@@ -17,6 +17,11 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets"]
     verbs: ["get", "list", "watch"]
+  # Read-only view of ArgoCD sync/health so the assistant can answer
+  # "has my deploy landed yet?". Still no write verbs anywhere — the invariant holds.
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -43,6 +48,16 @@ data:
   PROMETHEUS_URL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
   GIT_AUTHOR_NAME: platform-bot
   GIT_AUTHOR_EMAIL: platform-bot@local
+  # Chat assistant (non-secret). LLM_PROVIDER is set imperatively by bootstrap.sh
+  # from the caller's environment, alongside the API key in the secret — an
+  # unset provider is a valid state (chat 503s with setup instructions).
+  KNOWLEDGE_DB_PATH: /data/knowledge.db
+  CLAUDE_MODEL: claude-opus-5
+  GEMINI_MODEL: gemini-flash-latest
+  OPENAI_MODEL: gpt-4o-mini
+  LLM_EFFORT: high
+  OLLAMA_URL: http://ollama.platform.svc.cluster.local:11434
+  OLLAMA_MODEL: llama3.1
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -53,6 +68,10 @@ metadata:
     app: platform-backend
 spec:
   replicas: 1
+  # RWO knowledge volume: the default RollingUpdate would try to schedule a
+  # second pod that can't mount the same volume. Recreate avoids the deadlock.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: platform-backend
@@ -73,6 +92,9 @@ spec:
                 name: platform-backend-config
             - secretRef:
                 name: platform-backend-secrets
+          volumeMounts:
+            - name: knowledge
+              mountPath: /data
           livenessProbe:
             httpGet:
               path: /api/health
@@ -90,15 +112,54 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+      volumes:
+        - name: knowledge
+          persistentVolumeClaim:
+            claimName: platform-knowledge
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: platform-knowledge
+  namespace: platform
+spec:
+  # kind's default local-path StorageClass provisions this. Not emptyDir:
+  # learned issues surviving a pod restart is the whole point of the store.
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: platform-backend
   namespace: platform
+  labels:
+    app: platform-backend
 spec:
   selector:
     app: platform-backend
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 8080
+---
+# Prometheus scrapes the backend's /metrics so the chat subsystem reports into
+# the same monitoring stack as everything else. serviceMonitorSelectorNilUsesHelmValues
+# is false in the stack values, so this is picked up from any namespace.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: platform-backend
+  namespace: platform
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: platform-backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
