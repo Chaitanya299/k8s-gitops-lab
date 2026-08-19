@@ -36,10 +36,14 @@ class Settings:
     ollama_url: str = os.getenv("OLLAMA_URL", "http://ollama.platform.svc.cluster.local:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.1")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    # 'latest' alias always resolves; pinned names (gemini-2.5-flash) 404 for some keys.
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
     gemini_base_url: str = os.getenv(
         "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com"
     )
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
 
     knowledge_db_path: str = os.getenv("KNOWLEDGE_DB_PATH", "/data/knowledge.db")
     chat_token_budget: int = int(os.getenv("CHAT_TOKEN_BUDGET", "200000"))

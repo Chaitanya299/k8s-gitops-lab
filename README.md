@@ -7,6 +7,44 @@ reconciles the cluster. Prometheus + Grafana handle observability.
 
 v1 runs entirely on a **local `kind` cluster** — no cloud account needed.
 
+![The dashboard: a deploy form on the left, the Gemini-backed deploy assistant on the right](docs/images/dashboard.png)
+
+*The dashboard — a six-field deploy form, with the deploy assistant (here backed
+by Gemini) alongside it. Ask what's running, why a pod is failing, or describe a
+service to deploy; the assistant proposes settings and a human clicks Deploy.*
+
+---
+
+## Why this was built
+
+Shipping an AI service to Kubernetes usually means someone who knows `kubectl`,
+Helm, and the cluster's quirks doing it by hand — and that creates three
+problems this platform exists to remove:
+
+- **No single source of truth.** Hand-run `kubectl apply` leaves the cluster in a
+  state no file describes. Here **git is the source of truth**: every deploy is a
+  commit to a Helm values file, ArgoCD reconciles from it, and the backend has
+  **read-only** cluster access. The cluster can't drift from what's in git, and
+  every change has an author, a diff, and a revert.
+
+- **The knowledge doesn't scale.** Knowing that a workload needs `512Mi` or three
+  replicas, or what a crash-loop means, lives in a few people's heads. The
+  **deploy assistant** answers from *this* cluster's real state — live pods, logs,
+  metrics, deploy history, and a store of issues it has seen before — so the
+  advice reflects reality rather than generic Kubernetes lore. It *proposes*
+  settings; it never touches git or the cluster itself.
+
+- **Safety can't depend on discipline.** The assistant reads workload-controlled
+  data (pod logs can print anything) and suggests deploy parameters. So the
+  guardrails are structural, not procedural: there is **no tool that writes** to
+  git or the cluster, proposals are re-validated server-side, secrets are redacted
+  at the boundary, and a human clicks the final Deploy. A prompt-injected log line
+  cannot become a commit.
+
+The result is a platform where a deploy is a reviewable git commit, the tribal
+knowledge is queryable, and the AI assistant makes the easy path the safe one —
+all runnable on a laptop with no cloud account.
+
 ---
 
 ## How it works
@@ -447,18 +485,23 @@ functional without it):
 ```bash
 LLM_PROVIDER=claude ANTHROPIC_API_KEY=sk-ant-... ./scripts/bootstrap.sh   # hosted (Anthropic)
 LLM_PROVIDER=gemini GEMINI_API_KEY=AIza...       ./scripts/bootstrap.sh   # hosted (Google)
+LLM_PROVIDER=openai OPENAI_API_KEY=sk-...        ./scripts/bootstrap.sh   # hosted (OpenAI)
 LLM_PROVIDER=ollama ./scripts/bootstrap.sh                                # fully local, no data egress
 ```
 
 - **`claude`** uses the Anthropic API (`CLAUDE_MODEL`, default `claude-opus-5`).
 - **`gemini`** uses the Google Gemini API (`GEMINI_MODEL`, default
-  `gemini-2.5-flash`).
-- Both hosted options send cluster state (service names, pod logs **after secret
-  redaction**) to the provider — a real data-egress decision. The key lives only
-  in the `platform-backend-secrets` secret, created imperatively by
+  `gemini-flash-latest` — the `-latest` alias always resolves; pinned names like
+  `gemini-2.5-pro` 404 for some keys).
+- **`openai`** uses the OpenAI Chat Completions API (`OPENAI_MODEL`, default
+  `gpt-4o-mini`; any tool-calling model works).
+- The three hosted options send cluster state (service names, pod logs **after
+  secret redaction**) to the provider — a real data-egress decision. The key
+  lives only in the `platform-backend-secrets` secret, created imperatively by
   `bootstrap.sh`, never committed.
 - **`ollama`** runs a local model in-cluster; nothing leaves the cluster. Costs
-  a one-time model pull at bootstrap.
+  a one-time model pull at bootstrap. Needs a tool-calling model
+  (`llama3.1`, `qwen2.5`, …).
 
 The provider is a one-file seam (`app/llm/`): each backend translates the same
 canonical message/tool format to its own wire format, so adding another is a new

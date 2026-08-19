@@ -93,8 +93,8 @@ def get_provider() -> LLMProvider:
 
     if not provider:
         raise LLMNotConfigured(
-            "Chat is not configured. Set LLM_PROVIDER to 'claude', 'gemini', or "
-            "'ollama' on the platform-backend deployment and redeploy."
+            "Chat is not configured. Set LLM_PROVIDER to 'claude', 'gemini', "
+            "'openai', or 'ollama' on the platform-backend deployment and redeploy."
         )
 
     if provider == "claude":
@@ -117,6 +117,16 @@ def get_provider() -> LLMProvider:
 
         return GeminiProvider()
 
+    if provider == "openai":
+        if not settings.openai_api_key:
+            raise LLMNotConfigured(
+                "LLM_PROVIDER=openai but OPENAI_API_KEY is empty. Add it to the "
+                "platform-backend-secrets secret."
+            )
+        from .openai import OpenAIProvider
+
+        return OpenAIProvider()
+
     if provider == "ollama":
         base = settings.ollama_model.split(":")[0].lower()
         if not any(base.startswith(m) for m in TOOL_CAPABLE_OLLAMA_MODELS):
@@ -131,5 +141,5 @@ def get_provider() -> LLMProvider:
 
     raise LLMNotConfigured(
         f"LLM_PROVIDER={provider!r} is not a known provider. "
-        "Use 'claude', 'gemini', or 'ollama'."
+        "Use 'claude', 'gemini', 'openai', or 'ollama'."
     )

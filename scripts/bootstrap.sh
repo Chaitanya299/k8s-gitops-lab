@@ -103,11 +103,13 @@ kc create namespace platform --dry-run=client -o yaml | kc apply -f -
 LLM_PROVIDER="${LLM_PROVIDER:-}"
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 kc -n platform create secret generic platform-backend-secrets \
   --from-literal=GITOPS_REPO_URL="http://${GITEA_USER}:${GITEA_PASSWORD}@gitea-http.gitea.svc.cluster.local:3000/platform/gitops.git" \
   --from-literal=LLM_PROVIDER="${LLM_PROVIDER}" \
   --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
   --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY}" \
+  --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
   --dry-run=client -o yaml | kc apply -f -
 
 # Ollama only when it's the chosen provider — no 4GB model pull otherwise.
@@ -150,6 +152,7 @@ if [ -z "${LLM_PROVIDER:-}" ]; then
 
     LLM_PROVIDER=claude ANTHROPIC_API_KEY=sk-ant-... ./scripts/bootstrap.sh   # hosted (Anthropic)
     LLM_PROVIDER=gemini GEMINI_API_KEY=AIza...      ./scripts/bootstrap.sh   # hosted (Google)
+    LLM_PROVIDER=openai OPENAI_API_KEY=sk-...        ./scripts/bootstrap.sh   # hosted (OpenAI)
     LLM_PROVIDER=ollama ./scripts/bootstrap.sh                                # fully local, no data egress
 EOF
 fi
